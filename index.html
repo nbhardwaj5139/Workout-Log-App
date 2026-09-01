@@ -66,6 +66,20 @@
           <span class="row-label">Say confirmations out loud</span>
           <input id="set-speak" class="switch" type="checkbox">
         </label>
+        <label class="row">
+          <span class="row-label">Wake phrase</span>
+          <select id="set-wake" class="input compact">
+            <option value="log it">“log it”</option>
+            <option value="hey lift">“hey lift”</option>
+            <option value="next set">“next set”</option>
+          </select>
+        </label>
+        <p class="muted small">
+          In hands-free mode nothing is logged until it hears the wake phrase, so
+          talking to someone — or your music — won’t fill the log with nonsense.
+          Say <em>“log it, bench press 185 for 8”</em> in one breath, or say
+          <em>“log it”</em>, wait for the beep, then the set.
+        </p>
       </section>
 
       <section class="card">
@@ -100,11 +114,14 @@
   <!-- ============ COMPOSER (docked) ============ -->
   <div class="composer">
     <div id="toast-area" class="toast-area" aria-live="polite"></div>
+    <p id="status" class="status" aria-live="polite"></p>
     <p id="transcript" class="transcript" aria-live="polite"></p>
     <p id="mic-note" class="mic-note" hidden></p>
     <form id="manual-form" class="composer-bar" autocomplete="off">
       <input id="manual-input" class="composer-input" type="text" enterkeyhint="done"
              placeholder="bench press 185 for 8" aria-label="Type a set">
+      <button id="handsfree" class="hf-btn" type="button" aria-pressed="false"
+              title="Hands-free mode" aria-label="Toggle hands-free mode">HF</button>
       <button id="mic" class="mic" type="button" aria-pressed="false" aria-label="Start listening">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
@@ -116,6 +133,7 @@
   </div>
 
   <nav class="tabbar" aria-label="Sections">
+    <span id="tab-ind" class="tab-ind" aria-hidden="true"></span>
     <button class="tab-btn is-active" data-tab="today" type="button">Today</button>
     <button class="tab-btn" data-tab="history" type="button">History</button>
     <button class="tab-btn" data-tab="settings" type="button">Settings</button>

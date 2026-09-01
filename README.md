@@ -49,6 +49,33 @@ Anything the parser isn't sure of is logged with a **check** tag and a
 tap-to-fix row rather than a silent guess. An unrecognised movement is kept as
 a custom exercise instead of being dropped.
 
+## Hands-free
+
+Tap **HF** next to the mic and the app stops logging everything it hears and
+waits for a wake phrase. Two shapes work:
+
+```
+"log it, bench press 185 for 8"       → wake and set in one breath
+"log it"  …beep…  "185 for 8"         → wake, then the set within 9 seconds
+```
+
+Everything else — your training partner, the music, your own swearing — is
+ignored and shown as `ignored: "…"` rather than logged. That is the whole point:
+it is only safe to leave a mic running in a gym if the default is to do nothing.
+
+You get audio confirmation so you never have to look: a beep when it's ready
+for the set, a rising two-tone when the set lands, a low tone when it didn't
+understand. With the spoken confirmation on, it reads the set back to you.
+
+Wake phrase is configurable in Settings (`log it`, `hey lift`, `next set`).
+
+**What this does not do yet.** The screen has to stay on and the app has to be
+in the foreground. Phone in your pocket with the screen off is a native-app
+feature, not a web one — iOS kills recognition the moment the screen locks.
+And be aware that starting the mic will duck or interrupt whatever you're
+playing, because the OS gives the audio input session priority. Prop the phone
+on the bench, keep the app open.
+
 ## The log
 
 - **Today** — what you've done this session, grouped by exercise. Tap any set

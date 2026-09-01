@@ -364,3 +364,139 @@ main {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ===========================================================================
+   Motion
+   ---------------------------------------------------------------------------
+   Two layers. Layer one is the View Transitions API, which morphs between two
+   DOM states — a re-rendered list slides instead of flashing, and each set row
+   keeps its identity across the swap via its own view-transition-name. Layer
+   two is plain CSS animation for browsers without it, so nothing depends on
+   the fancy path. Both are switched off under prefers-reduced-motion.
+   =========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);      /* settles, no overshoot */
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1); /* slight overshoot, for taps */
+  --dur-fast: 140ms;
+  --dur: 240ms;
+  --dur-slow: 380ms;
+}
+
+/* --- view transitions ---------------------------------------------------- */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur);
+  animation-timing-function: var(--ease-out);
+}
+
+/* Naming the fixed chrome holds it still while the content underneath
+   cross-fades. The composer is deliberately left unnamed and outside the
+   transition so the input never goes inert mid-animation. */
+.topbar { view-transition-name: topbar; }
+.tabbar { view-transition-name: tabbar; }
+
+/* --- fallback + supplementary animation ---------------------------------- */
+
+@keyframes slide-up-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-out-down {
+  to { opacity: 0; transform: translateY(6px); }
+}
+@keyframes pop {
+  50% { transform: scale(1.06); }
+}
+
+.tab.is-active { animation: slide-up-in var(--dur) var(--ease-out) both; }
+.set-row.is-new { animation: slide-up-in var(--dur-slow) var(--ease-spring) both; }
+.set-row.is-leaving { animation: fade-out-down var(--dur-fast) var(--ease-out) forwards; }
+.total-value.is-bumped { animation: pop var(--dur) var(--ease-spring); }
+
+.toast { animation: slide-up-in var(--dur) var(--ease-out) both; }
+.toast.is-leaving { animation: fade-out-down var(--dur-fast) var(--ease-out) forwards; }
+
+/* --- interactive states -------------------------------------------------- */
+
+.set-row, .btn, .example, .tab-btn, .icon-btn, .composer-input {
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+.btn:active, .example:active, .icon-btn:active { transform: scale(.96); }
+.composer-input:focus { border-color: var(--accent); background: var(--surface-2); }
+
+/* --- sliding tab indicator ----------------------------------------------- */
+
+.tabbar { position: fixed; }
+.tab-ind {
+  position: absolute; top: .4rem; left: 0; height: 34px;
+  border-radius: 999px; background: var(--surface-2);
+  transition: transform var(--dur) var(--ease-out), width var(--dur) var(--ease-out);
+  pointer-events: none; will-change: transform, width;
+}
+.tab-btn { position: relative; z-index: 1; }
+.tab-btn.is-active { background: none; }
+
+/* --- dialog ------------------------------------------------------------- */
+
+.sheet {
+  opacity: 0;
+  transform: translateY(14px) scale(.98);
+  transition:
+    opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-out),
+    overlay var(--dur) allow-discrete,
+    display var(--dur) allow-discrete;
+}
+.sheet[open] { opacity: 1; transform: none; }
+@starting-style {
+  .sheet[open] { opacity: 0; transform: translateY(14px) scale(.98); }
+}
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0);
+  transition: background-color var(--dur) var(--ease-out), overlay var(--dur) allow-discrete, display var(--dur) allow-discrete;
+}
+.sheet[open]::backdrop { background: rgba(0, 0, 0, .6); }
+@starting-style {
+  .sheet[open]::backdrop { background: rgba(0, 0, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation: none !important; }
+}
+
+/* --- hands-free ---------------------------------------------------------- */
+
+.hf-btn {
+  flex: none; width: 44px; height: 44px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  color: var(--muted); font: inherit; font-size: .74rem; font-weight: 700;
+  letter-spacing: .02em; cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.hf-btn[aria-pressed="true"] {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.hf-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* The armed window, so a glance tells you it is waiting for the set. */
+.composer.is-armed .composer-input {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.status {
+  max-width: 640px; margin: 0 auto .45rem; text-align: center;
+  font-size: .78rem; color: var(--muted);
+}
+.status.is-armed { color: var(--accent); font-weight: 550; }
+.status:empty { display: none; }

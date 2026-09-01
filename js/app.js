@@ -13,6 +13,7 @@ import * as store from './store.js';
 import { setVolume, sessionTotals, dayKey, groupConsecutive } from './totals.js';
 import { Recognizer, speak, speechSupported, speechUnavailableReason, isIOS, isStandalone } from './speech.js';
 import { ScreenLock } from './wakelock.js';
+import { routeUtterance, WAKE_PHRASES, ARM_WINDOW_MS } from './handsfree.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -23,11 +24,36 @@ let currentExerciseId = null;
 let lastSetRef = null;
 let installPrompt = null;
 let resumeMicOnReturn = false;
+let handsFree = false;
+const armed = { armedUntil: 0 };
+let armTimer = null;
 
 const unit = () => state.settings.unit;
 const persist = () => store.save(state);
 
 const screenLock = new ScreenLock();
+
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Cross-fade between two DOM states using the View Transitions API.
+ *
+ * Used for tab switching only, and never for logging a set. Two of these
+ * fired back to back wedged the renderer for over a minute in testing, and
+ * logging two sets in quick succession is completely normal — so the log
+ * animates with plain CSS, which cannot stall. The guard below also refuses
+ * to start a second transition while one is running.
+ */
+let transitionBusy = false;
+function withTransition(update) {
+  if (!document.startViewTransition || reducedMotion() || transitionBusy) { update(); return; }
+  transitionBusy = true;
+  const t = document.startViewTransition(update);
+  t.finished.finally(() => { transitionBusy = false; });
+}
+
+/** Set ids give each row a stable identity, so a re-render moves rows. */
+let knownSetIds = new Set();
 
 // ---------------------------------------------------------------------------
 // Formatting
@@ -103,15 +129,58 @@ function toast(html, { level = 'ok', actions = [], ttl = 6000 } = {}) {
       btn.type = 'button';
       btn.className = 'btn';
       btn.textContent = a.label;
-      btn.addEventListener('click', () => { a.run(); node.remove(); });
+      btn.addEventListener('click', () => { a.run(); dismiss(node); });
       bar.appendChild(btn);
     }
     node.appendChild(bar);
   }
   area.prepend(node);
-  while (area.children.length > 1) area.lastElementChild.remove();
-  if (ttl) setTimeout(() => node.remove(), ttl);
+  // dismiss() only *starts* an exit animation — the node lives on until it
+  // ends. Counting it as present here spins forever, so count only the
+  // toasts that are not already on their way out.
+  const live = () => [...area.children].filter((n) => !n.classList.contains('is-leaving'));
+  while (live().length > 1) dismiss(live().at(-1));
+  if (ttl) setTimeout(() => dismiss(node), ttl);
 }
+
+/** Let a toast animate out rather than vanishing mid-sentence. */
+function dismiss(node) {
+  if (!node || node.classList.contains('is-leaving')) return;
+  if (reducedMotion()) { node.remove(); return; }
+  node.classList.add('is-leaving');
+  node.addEventListener('animationend', () => node.remove(), { once: true });
+  setTimeout(() => node.remove(), 400);
+}
+
+// ---------------------------------------------------------------------------
+// Audio cues — in hands-free mode these are the entire interface
+// ---------------------------------------------------------------------------
+
+let audioCtx = null;
+
+function tone(freq, ms = 120, when = 0) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const t0 = audioCtx.currentTime + when;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.22, t0 + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + ms / 1000);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t0);
+    osc.stop(t0 + ms / 1000 + 0.02);
+  } catch { /* audio is a nicety, never a dependency */ }
+}
+
+const cue = {
+  armed: () => tone(880, 110),                       // "go ahead"
+  logged: () => { tone(660, 90); tone(990, 110, 0.1); }, // rising: got it
+  rejected: () => tone(320, 180),                    // low: not understood
+};
 
 // ---------------------------------------------------------------------------
 // Handling what was said
@@ -141,6 +210,7 @@ function dispatch(result, raw, source) {
     <div class="toast-main">${escapeHTML(result.reason)}</div>
     <p class="small muted">Try “bench press 185 for 8”. Order doesn’t matter — “185 for 8 bench press” works too.</p>`,
   { level: 'bad' });
+  cue.rejected();
   speak("Didn't catch that", state.settings.speak);
   return null;
 }
@@ -167,7 +237,12 @@ function logSet(result, source) {
     ],
   });
 
+  cue.logged();
   speak(`${saved.exerciseName}, ${plainSet(saved).replace('×', 'by')}`, state.settings.speak);
+  queueMicrotask(() => {
+    const row = document.querySelector(`.set-row[data-set="${saved.id}"]`);
+    row?.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  });
   return saved;
 }
 
@@ -178,13 +253,26 @@ function undoLast() {
     return;
   }
   const victim = session.sets[session.sets.length - 1];
-  state = store.deleteSet(state, session.id, victim.id);
-  refreshSessionRef();
-  persist();
-  lastSetRef = null;
-  toast(`<div class="toast-main">Removed ${escapeHTML(victim.exerciseName)} ${escapeHTML(plainSet(victim))}</div>`);
-  speak('Removed', state.settings.speak);
-  render();
+  const row = document.querySelector(`.set-row[data-set="${victim.id}"]`);
+
+  const commit = () => {
+    state = store.deleteSet(state, session.id, victim.id);
+    refreshSessionRef();
+    persist();
+    lastSetRef = null;
+    knownSetIds.delete(victim.id);
+    toast(`<div class="toast-main">Removed ${escapeHTML(victim.exerciseName)} ${escapeHTML(plainSet(victim))}</div>`);
+    speak('Removed', state.settings.speak);
+    render();
+  };
+
+  // Let the row fall away first; the re-render then closes the gap.
+  if (row && !reducedMotion()) {
+    row.classList.add('is-leaving');
+    setTimeout(commit, 130);
+  } else {
+    commit();
+  }
 }
 
 function runCommand(result) {
@@ -310,6 +398,8 @@ function renderToday() {
         ${EXAMPLES.map((e) => `<button class="example" type="button" data-example="${escapeHTML(e)}">${escapeHTML(e)}</button>`).join('')}
       </div>
     </div>`;
+    knownSetIds = new Set();
+    lastTotals = {};
     $$('.example').forEach((btn) => btn.addEventListener('click', () => {
       $('#manual-input').value = btn.dataset.example;
       $('#manual-input').focus();
@@ -336,7 +426,7 @@ function renderToday() {
         <span class="group-meta">${hard} set${hard > 1 ? 's' : ''}${vol ? ` · ${fmtVolume(vol)} ${unit()}` : ''}</span>
       </div>
       <ul class="set-list">
-        ${g.sets.map((s, i) => `<li><button class="set-row" type="button" data-set="${s.id}">
+        ${g.sets.map((s, i) => `<li><button class="set-row${knownSetIds.has(s.id) ? '' : ' is-new'}" type="button" data-set="${s.id}">
           <span class="set-index">${i + 1}</span>
           <span class="set-main">${describeSet(s)}</span>
           <span class="spacer"></span>
@@ -351,6 +441,22 @@ function renderToday() {
   actions.hidden = false;
   $$('#today-sets .set-row').forEach((btn) => {
     btn.addEventListener('click', () => openEdit(btn.dataset.set));
+  });
+  knownSetIds = new Set(session.sets.map((s) => s.id));
+  bumpTotals(t);
+}
+
+// Nudge a total when it actually changes, so the eye catches the update.
+let lastTotals = {};
+function bumpTotals(t) {
+  const cells = $$('#today-head .total-value');
+  const order = [t.hardSets, t.reps, t.volume, t.exercises];
+  order.forEach((value, i) => {
+    if (lastTotals[i] !== undefined && lastTotals[i] !== value && cells[i] && !reducedMotion()) {
+      cells[i].classList.add('is-bumped');
+      cells[i].addEventListener('animationend', () => cells[i].classList.remove('is-bumped'), { once: true });
+    }
+    lastTotals[i] = value;
   });
 }
 
@@ -390,6 +496,7 @@ function renderHistory() {
 function renderSettings() {
   $('#set-unit').value = state.settings.unit;
   $('#set-speak').checked = state.settings.speak;
+  $('#set-wake').value = state.settings.wakePhrase || 'log it';
   renderInstallState();
 }
 
@@ -504,16 +611,67 @@ const recognizer = new Recognizer({
   onInterim: (t) => { $('#transcript').textContent = t; },
   onFinal: (t) => {
     $('#transcript').textContent = '';
-    handleUtterance(t, 'voice');
+    if (!handsFree) { handleUtterance(t, 'voice'); return; }
+
+    const decision = routeUtterance(t, armed, Date.now(), wakePhrases());
+    if (decision.action === 'arm') { armWindow(); return; }
+    if (decision.action === 'log') {
+      disarm();
+      handleUtterance(decision.text, 'voice');
+      renderStatus();
+      return;
+    }
+    // Ignored: someone talking, or the music. Show it, never log it.
+    $('#transcript').textContent = `ignored: “${t}”`;
+    setTimeout(() => { $('#transcript').textContent = ''; }, 1800);
   },
   onState: (s) => {
     screenLock.sync(recognizer.wanted);
     $('#mic').setAttribute('aria-pressed', s === 'listening' ? 'true' : 'false');
-    if (s === 'listening') $('#transcript').textContent = 'Listening…';
-    else if (s === 'idle') $('#transcript').textContent = '';
+    if (s === 'idle') { disarm(); handsFree = false; }
+    renderStatus();
   },
   onError: (msg) => toast(`<div class="toast-main">${escapeHTML(msg)}</div>`, { level: 'low' }),
 });
+
+const wakePhrases = () => {
+  const chosen = state.settings.wakePhrase || 'log it';
+  // Always accept the built-ins too; a missed wake phrase is worse than a
+  // slightly wider net, since nothing logs without one.
+  return [...new Set([chosen, ...WAKE_PHRASES])];
+};
+
+function armWindow() {
+  armed.armedUntil = Date.now() + ARM_WINDOW_MS;
+  cue.armed();
+  renderStatus();
+  clearTimeout(armTimer);
+  armTimer = setTimeout(() => { disarm(); renderStatus(); }, ARM_WINDOW_MS);
+}
+
+function disarm() {
+  armed.armedUntil = 0;
+  clearTimeout(armTimer);
+  armTimer = null;
+  $('.composer')?.classList.remove('is-armed');
+}
+
+function renderStatus() {
+  const el = $('#status');
+  const composer = $('.composer');
+  if (!recognizer.wanted) {
+    el.textContent = '';
+    el.classList.remove('is-armed');
+    composer.classList.remove('is-armed');
+    return;
+  }
+  const isArmed = armed.armedUntil > Date.now();
+  el.classList.toggle('is-armed', isArmed);
+  composer.classList.toggle('is-armed', isArmed);
+  if (isArmed) el.textContent = 'Go ahead — say the set';
+  else if (handsFree) el.textContent = `Hands-free · say “${state.settings.wakePhrase || 'log it'}”`;
+  else el.textContent = 'Listening — say the set';
+}
 
 /**
  * Phones suspend a backgrounded tab and iOS tears speech recognition down
@@ -539,8 +697,28 @@ function handleVisibility() {
 function wire() {
   $('#mic').addEventListener('click', () => {
     speak('', state.settings.speak); // unlocks speech synthesis on first gesture
+    if (!recognizer.wanted) handsFree = false;
     recognizer.toggle();
   });
+
+  $('#handsfree').addEventListener('click', () => {
+    handsFree = !handsFree;
+    $('#handsfree').setAttribute('aria-pressed', handsFree ? 'true' : 'false');
+    disarm();
+    if (handsFree) {
+      speak('', state.settings.speak);
+      tone(720, 90); // confirm the mode change audibly, since that is the point
+      if (!recognizer.wanted) recognizer.start();
+      toast(`<div class="toast-main">Hands-free on</div>
+        <p class="small muted">Say “${escapeHTML(state.settings.wakePhrase || 'log it')}” then the set — or both in one breath.
+        Nothing logs without the wake phrase.</p>`);
+    } else {
+      recognizer.stop();
+    }
+    renderStatus();
+  });
+
+  if (!speechSupported) $('#handsfree').disabled = true;
 
   if (!speechSupported) {
     $('#mic').disabled = true;
@@ -563,11 +741,17 @@ function wire() {
 
   $$('.tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      $$('.tab-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
-      $$('.tab').forEach((t) => t.classList.toggle('is-active', t.id === `tab-${btn.dataset.tab}`));
-      window.scrollTo({ top: 0 });
+      if (btn.classList.contains('is-active')) return;
+      moveTabIndicator(btn);
+      withTransition(() => {
+        $$('.tab-btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+        $$('.tab').forEach((t) => t.classList.toggle('is-active', t.id === `tab-${btn.dataset.tab}`));
+      });
+      window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
     });
   });
+  moveTabIndicator($('.tab-btn.is-active'));
+  window.addEventListener('resize', () => moveTabIndicator($('.tab-btn.is-active')));
 
   $('#theme-toggle').addEventListener('click', () => {
     const now = document.documentElement.getAttribute('data-theme');
@@ -577,7 +761,7 @@ function wire() {
     localStorage.setItem('voicelift.theme', next);
   });
 
-  $('#sheet-filter').addEventListener('input', renderHistory);
+  $('#sheet-filter').addEventListener('input', renderHistory); // no transition while typing
   $('#export-sets').addEventListener('click', () => download(`voicelift-sets-${stamp()}.csv`, store.toCSV(state), 'text/csv'));
   $('#export-sessions').addEventListener('click', () => download(`voicelift-workouts-${stamp()}.csv`, store.toSessionCSV(state), 'text/csv'));
   $('#export-json').addEventListener('click', () => download(`voicelift-backup-${stamp()}.json`, store.toJSON(state), 'application/json'));
@@ -589,6 +773,11 @@ function wire() {
   $('#set-speak').addEventListener('change', (e) => {
     state = store.updateSettings(state, { speak: e.target.checked });
     persist();
+  });
+  $('#set-wake').addEventListener('change', (e) => {
+    state = store.updateSettings(state, { wakePhrase: e.target.value });
+    persist();
+    renderStatus();
   });
 
   $('#import-file').addEventListener('change', async (e) => {
@@ -630,6 +819,16 @@ function wire() {
 
   document.addEventListener('visibilitychange', handleVisibility);
   setInterval(renderSessionMeta, 30000);
+}
+
+/** Slide the pill to sit behind whichever tab is active. */
+function moveTabIndicator(btn) {
+  const ind = $('#tab-ind');
+  if (!ind || !btn) return;
+  const bar = btn.parentElement.getBoundingClientRect();
+  const box = btn.getBoundingClientRect();
+  ind.style.width = `${box.width}px`;
+  ind.style.transform = `translateX(${box.left - bar.left}px)`;
 }
 
 function boot() {

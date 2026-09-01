@@ -12,6 +12,7 @@ const KEY = 'voicelift.v1';
 export const DEFAULT_SETTINGS = {
   unit: 'lb',
   speak: true,
+  wakePhrase: 'log it',
 };
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
