@@ -14,6 +14,7 @@
  */
 
 import { ALIAS_INDEX, BY_ID } from './exercises.js';
+import { phoneticSimilarity } from './phonetic.js';
 
 // ---------------------------------------------------------------------------
 // Spoken numbers
@@ -240,7 +241,11 @@ function tokenScore(phrase, alias) {
   if (!pa.length || !ab.length) return 0;
   let hits = 0;
   for (const w of ab) {
-    if (pa.some((p) => p === w || similarity(p, w) >= 0.8)) hits += 1;
+    // Spelling distance catches typos; phonetic distance catches mishearings.
+    // "bensch press" is two letters off "bench press" but identical out loud.
+    if (pa.some((p) => p === w
+      || similarity(p, w) >= 0.8
+      || phoneticSimilarity(p, w) >= 0.85)) hits += 1;
   }
   const recall = hits / ab.length;
   const precision = hits / pa.length;

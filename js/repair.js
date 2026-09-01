@@ -65,6 +65,8 @@ const WORDS = new Map(Object.entries({
   failure: 'failure', fail: 'failure',
 }));
 
+import { snapToNumberWord } from './phonetic.js';
+
 /** Apply the domain substitutions. Returns text unchanged when nothing hits. */
 export function repair(text) {
   let t = ` ${String(text || '').toLowerCase()} `;
@@ -74,7 +76,10 @@ export function repair(text) {
     .map((w) => {
       const bare = w.replace(/[^a-z0-9']/g, '');
       const fixed = WORDS.get(bare);
-      return fixed === undefined ? w : w.replace(bare, fixed);
+      if (fixed !== undefined) return w.replace(bare, fixed);
+      // Nothing in the list matched — try the sound of it ("fife" -> "five").
+      const snapped = /^[a-z]+$/.test(bare) ? snapToNumberWord(bare) : null;
+      return snapped ? w.replace(bare, snapped) : w;
     })
     .join(' ');
   return t.replace(/\s+/g, ' ').trim();

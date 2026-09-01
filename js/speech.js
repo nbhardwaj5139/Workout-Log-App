@@ -74,7 +74,9 @@ export class Recognizer {
     // gives the same hands-free behaviour without the hang.
     rec.continuous = !isIOS();
     rec.interimResults = true;
-    rec.maxAlternatives = 3;
+    // The top transcript is often not the best one. Alternatives cost nothing
+    // and every extra reading is another chance to parse a complete set.
+    rec.maxAlternatives = 6;
 
     rec.onresult = (event) => {
       let interim = '';

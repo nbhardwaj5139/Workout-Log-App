@@ -15,6 +15,7 @@ import { Recognizer, speak, speechSupported, speechUnavailableReason, isIOS, isS
 import { ScreenLock } from './wakelock.js';
 import { routeUtterance, detectWake, WAKE_PHRASES, ARM_WINDOW_MS } from './handsfree.js';
 import { bestReading } from './repair.js';
+import * as voicelog from './voicelog.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -198,6 +199,18 @@ function handleUtterance(raw, source = 'voice', alternatives = []) {
   // mangled ("five reps" -> "fiber wraps"). Try every reading, keep the one
   // that actually parses.
   const best = bestReading(raw, alternatives, parse);
+
+  if (source === 'voice') {
+    const summary = best.results.map((r) => (r.type === 'set'
+      ? `${r.set.exerciseName} ${plainSet(r.set)}`
+      : r.type === 'command' ? `command: ${r.command}`
+        : r.type === 'focus' ? `switched to ${r.exerciseName}`
+          : `not understood (${r.reason})`)).join('; ');
+    voicelog.record({
+      raw, alternatives, chosen: best.text, outcome: summary,
+    });
+  }
+
   for (const result of best.results) dispatch(result, raw, source);
   render();
 }
@@ -240,6 +253,15 @@ function logSet(result, source) {
     actions: [
       { label: 'Edit', run: () => openEdit(saved.id) },
       { label: 'Undo', run: undoLast },
+      {
+        label: 'Wrong',
+        run: () => {
+          voicelog.markWrong();
+          toast('<div class="toast-main">Flagged as misheard</div>'
+            + '<p class="small muted">Kept in the voice log. Settings → Voice log → Copy, and send it over.</p>');
+          renderSettings();
+        },
+      },
     ],
   });
 
@@ -503,6 +525,10 @@ function renderSettings() {
   $('#set-unit').value = state.settings.unit;
   $('#set-speak').checked = state.settings.speak;
   $('#set-wake').value = state.settings.wakePhrase || 'log it';
+  const entries = voicelog.all();
+  $('#voicelog-count').textContent = entries.length
+    ? `${entries.length} recorded · ${voicelog.wrongCount()} marked wrong`
+    : 'Nothing recorded yet — it fills up as you use the mic.';
   renderInstallState();
 }
 
@@ -812,6 +838,27 @@ function wire() {
       toast(`<div class="toast-main">Could not read that file</div><p class="small muted">${escapeHTML(err.message)}</p>`, { level: 'bad' });
     }
     e.target.value = '';
+  });
+
+  $('#voicelog-copy').addEventListener('click', async () => {
+    const text = voicelog.toText();
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('<div class="toast-main">Voice log copied</div><p class="small muted">Paste it wherever you are reporting the problem.</p>');
+    } catch {
+      // Clipboard is blocked in plenty of contexts; falling back to a file
+      // beats telling the user it failed.
+      download(`voicelift-voicelog-${stamp()}.txt`, text, 'text/plain');
+      toast('<div class="toast-main">Clipboard blocked — downloaded instead</div>');
+    }
+  });
+  $('#voicelog-download').addEventListener('click', () => {
+    download(`voicelift-voicelog-${stamp()}.txt`, voicelog.toText(), 'text/plain');
+  });
+  $('#voicelog-clear').addEventListener('click', () => {
+    voicelog.clear();
+    renderSettings();
+    toast('<div class="toast-main">Voice log cleared</div>');
   });
 
   $('#clear-data').addEventListener('click', () => {

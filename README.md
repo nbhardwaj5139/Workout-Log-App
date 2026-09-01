@@ -50,12 +50,22 @@ okay so I just did bench press 185 for 8
 log my first set of bench press 185 for 8
 ```
 
+**If it mishears you, send me the words.** Settings → **Voice log** keeps the
+last 200 utterances: the raw transcript, every alternative the recogniser
+offered, which reading was used, and what it logged. Tap **Wrong** on any
+confirmation to flag one. Then Copy, and paste it into a bug report. A list of
+real failures is worth more than any amount of guessing.
+
 **Mishearings get repaired.** Recognisers mangle gym words — "five reps" comes
 back as "fiber wraps", "squat" as "squad", "six" as "sex". Every utterance is
 parsed several ways: the raw transcript, a domain-repaired version, and each
 alternative the recogniser offered, each repaired too. Whichever reading
 actually parses into a complete set wins, so a repair can only ever help — a
 clean transcript is always left alone.
+
+Matching is phonetic as well as literal, so "bensch press" finds bench press
+and "fife" becomes five. Grammar words are protected from that: "for" and
+"four" are phonetically identical, and "for 8" has to keep meaning reps.
 
 Spoken numbers work the way lifters actually say them: `two twenty five` is
 225, `one thirty five` is 135, `four oh five` is 405, `a hundred and eighty
