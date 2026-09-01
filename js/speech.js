@@ -116,10 +116,13 @@ export class Recognizer {
         this.onError('Speech recognition kept dropping. Tap the mic to try again.');
         return;
       }
+      // Every millisecond here is speech the user has already said and we
+      // are not hearing. Restart as close to immediately as the platform
+      // tolerates.
       setTimeout(() => {
         if (!this.wanted) return;
         try { rec.start(); } catch { /* already starting */ }
-      }, isIOS() ? 400 : 250);
+      }, isIOS() ? 120 : 40);
     };
 
     rec.onstart = () => this.onState('listening');

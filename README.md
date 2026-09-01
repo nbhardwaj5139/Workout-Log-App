@@ -40,6 +40,23 @@ bench press for 8 at 185   at 185 bench press 8 reps  185 pounds bench press 8 r
 | `make that 195` | corrects what it just logged |
 | `undo` · `finish workout` | commands |
 
+It also copes with how people actually talk. All of these log the same set:
+
+```
+bench press 185 for 8
+i'd like you to log bench press 185 for 8
+hey can you put down bench press, 185 for 8
+okay so I just did bench press 185 for 8
+log my first set of bench press 185 for 8
+```
+
+**Mishearings get repaired.** Recognisers mangle gym words — "five reps" comes
+back as "fiber wraps", "squat" as "squad", "six" as "sex". Every utterance is
+parsed several ways: the raw transcript, a domain-repaired version, and each
+alternative the recogniser offered, each repaired too. Whichever reading
+actually parses into a complete set wins, so a repair can only ever help — a
+clean transcript is always left alone.
+
 Spoken numbers work the way lifters actually say them: `two twenty five` is
 225, `one thirty five` is 135, `four oh five` is 405, `a hundred and eighty
 five` is 185. Several sets in one breath work too —
@@ -62,6 +79,10 @@ waits for a wake phrase. Two shapes work:
 Everything else — your training partner, the music, your own swearing — is
 ignored and shown as `ignored: "…"` rather than logged. That is the whole point:
 it is only safe to leave a mic running in a gym if the default is to do nothing.
+
+The wake phrase arms off the **interim** result, not the final one. Recognisers
+wait for a pause before deciding a sentence is over, and that wait was dead air
+you were already talking into — so the beep now lands as you finish saying it.
 
 You get audio confirmation so you never have to look: a beep when it's ready
 for the set, a rising two-tone when the set lands, a low tone when it didn't

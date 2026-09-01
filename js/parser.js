@@ -137,10 +137,38 @@ const FILLERS = [
   'u+m+', 'u+h+', 'e+r+', 'h+m+', 'mm+', 'okay', 'ok', 'alright', 'all right',
   'so', 'like', 'just', 'please', 'yeah', 'yep', 'and then i', 'i think',
 ];
+/**
+ * Conversational scaffolding people put in front of the actual set.
+ *
+ * Real speech is not "bench press 185 for 8" — it is "hey, can you log my
+ * first set of bench press, 185 for 8". These are stripped from the start of
+ * the utterance, repeatedly, until only the set is left. Order matters:
+ * longer phrases first so "i'd like you to" is not half-eaten by "to".
+ */
 const LEAD_INS = [
-  'log', 'logged', 'record', 'put down', 'write down', 'note that', 'mark',
-  'i did', 'i just did', 'that was', 'did', 'doing', 'i am doing', "i'm doing",
-  'lets do', "let's do", 'next up', 'next', 'set of', 'this is',
+  // politeness and address
+  "i'd like you to", 'i would like you to', 'i want you to', 'i need you to',
+  'can you please', 'could you please', 'would you please',
+  'can you', 'could you', 'would you', 'will you',
+  'please', 'hey there', 'hey', 'hi', 'yo', 'okay', 'ok', 'alright', 'right',
+  "let's", 'lets', 'help me', 'go ahead and', 'for me',
+  // intent
+  'i want to', 'i wanna', 'i am going to', "i'm going to", 'im going to',
+  'i am about to', "i'm about to", 'going to', 'gonna',
+  'log down', 'log', 'logged', 'logging', 'record', 'recording',
+  'put down', 'put in', 'write down', 'write', 'note that', 'note down',
+  'mark down', 'mark', 'save', 'enter', 'track', 'add in', 'add',
+  // reporting what happened
+  'i did', 'i just did', 'i have done', "i've done", 'that was', 'this was',
+  'did', 'doing', 'i am doing', "i'm doing", 'im doing', 'finished', 'completed',
+  // sequencing chatter
+  'first exercise', 'next exercise', 'last exercise', 'the exercise',
+  'my first set of', 'the first set of', 'first set of', 'my first set',
+  'the first set', 'first set', 'my next set of', 'next set of', 'my set of',
+  'my last set', 'this set', 'that set', 'the set', 'my set',
+  'lets do', "let's do", 'next up', 'next', 'this is', 'it was', 'as',
+  // stray connectors left behind by the above
+  'the', 'a', 'an', 'my', 'of', 'is', 'was', 'that', 'to', 'and', 'then', 'for the',
 ];
 
 export function normalizeText(input) {
@@ -155,12 +183,22 @@ export function normalizeText(input) {
     .replace(/\b(?:a |one )?triple\b/g, '3 reps');
   for (const f of FILLERS) t = t.replace(new RegExp(`\\b${f}\\b`, 'g'), ' ');
   t = t.replace(/\s+/g, ' ').trim();
-  // "okay so log bench press" can leave two lead-ins stacked up.
-  for (let pass = 0; pass < 2; pass += 1) {
-    for (const l of LEAD_INS) {
-      const re = new RegExp(`^${l}\\b`);
-      if (re.test(t)) { t = t.replace(re, '').trim(); break; }
+  // "hey can you log my first set of bench press" stacks five of these, so
+  // keep peeling until nothing matches. A strip that would leave nothing
+  // useful behind is rolled back — better a clumsy parse than an empty one.
+  const ordered = [...LEAD_INS].sort((a, b) => b.length - a.length);
+  for (let pass = 0; pass < 8; pass += 1) {
+    let peeled = false;
+    for (const l of ordered) {
+      const re = new RegExp(`^${l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+      if (!re.test(t)) continue;
+      const next = t.replace(re, '').trim();
+      if (!next) return t;           // that phrase *was* the whole utterance
+      t = next;
+      peeled = true;
+      break;
     }
+    if (!peeled) break;
   }
   return t.replace(/\s+/g, ' ').trim();
 }

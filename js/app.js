@@ -13,7 +13,8 @@ import * as store from './store.js';
 import { setVolume, sessionTotals, dayKey, groupConsecutive } from './totals.js';
 import { Recognizer, speak, speechSupported, speechUnavailableReason, isIOS, isStandalone } from './speech.js';
 import { ScreenLock } from './wakelock.js';
-import { routeUtterance, WAKE_PHRASES, ARM_WINDOW_MS } from './handsfree.js';
+import { routeUtterance, detectWake, WAKE_PHRASES, ARM_WINDOW_MS } from './handsfree.js';
+import { bestReading } from './repair.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -186,13 +187,18 @@ const cue = {
 // Handling what was said
 // ---------------------------------------------------------------------------
 
-function handleUtterance(raw, source = 'voice') {
-  const results = parseUtterance(raw, {
+function handleUtterance(raw, source = 'voice', alternatives = []) {
+  const parse = (text) => parseUtterance(text, {
     currentExerciseId,
     lastSet: lastSet(),
     unitPref: unit(),
   });
-  for (const result of results) dispatch(result, raw, source);
+
+  // The recogniser's first guess is often not its best one, and gym words get
+  // mangled ("five reps" -> "fiber wraps"). Try every reading, keep the one
+  // that actually parses.
+  const best = bestReading(raw, alternatives, parse);
+  for (const result of best.results) dispatch(result, raw, source);
   render();
 }
 
@@ -608,16 +614,28 @@ function registerServiceWorker() {
 // ---------------------------------------------------------------------------
 
 const recognizer = new Recognizer({
-  onInterim: (t) => { $('#transcript').textContent = t; },
-  onFinal: (t) => {
+  onInterim: (t) => {
+    $('#transcript').textContent = t;
+    if (!handsFree || armed.armedUntil > Date.now()) return;
+    // Chrome waits for a pause before marking a result final, which is dead
+    // air the user is already talking into. Arming off the interim result
+    // removes that wait entirely.
+    if (detectWake(t, wakePhrases()).matched) armWindow();
+  },
+  onFinal: (t, meta = {}) => {
     $('#transcript').textContent = '';
-    if (!handsFree) { handleUtterance(t, 'voice'); return; }
+    const alts = meta.alternatives || [];
+    if (!handsFree) { handleUtterance(t, 'voice', alts); return; }
 
     const decision = routeUtterance(t, armed, Date.now(), wakePhrases());
     if (decision.action === 'arm') { armWindow(); return; }
     if (decision.action === 'log') {
       disarm();
-      handleUtterance(decision.text, 'voice');
+      // Strip the wake phrase off the alternatives too, so they stay usable.
+      const cleanAlts = alts
+        .map((a) => { const w = detectWake(a, wakePhrases()); return w.matched ? w.rest : a; })
+        .filter(Boolean);
+      handleUtterance(decision.text, 'voice', cleanAlts);
       renderStatus();
       return;
     }
@@ -642,8 +660,9 @@ const wakePhrases = () => {
 };
 
 function armWindow() {
+  const wasArmed = armed.armedUntil > Date.now();
   armed.armedUntil = Date.now() + ARM_WINDOW_MS;
-  cue.armed();
+  if (!wasArmed) cue.armed();
   renderStatus();
   clearTimeout(armTimer);
   armTimer = setTimeout(() => { disarm(); renderStatus(); }, ARM_WINDOW_MS);

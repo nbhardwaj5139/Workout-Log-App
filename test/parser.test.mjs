@@ -199,3 +199,34 @@ test('word order does not matter — exercise, weight and reps in any position',
   expect('120 for 10 lat pulldown', 'lat-pulldown', 120, 10);
   expect('lat pulldown 10 reps 120 pounds', 'lat-pulldown', 120, 10);
 });
+
+test('plain conversational English gets down to the set', () => {
+  const expect = (text, exerciseId, weight, reps, ctx = {}) => {
+    const r = parseUtterance(text, { unitPref: 'lb', ...ctx })[0];
+    assert.equal(r.type, 'set', `"${text}" → ${r.type} ${r.reason || ''}`);
+    assert.equal(r.set.exerciseId, exerciseId, `"${text}" → wrong exercise`);
+    assert.equal(r.set.weight, weight, `"${text}" → wrong weight`);
+    assert.equal(r.set.reps, reps, `"${text}" → wrong reps`);
+  };
+
+  expect("i'd like you to log bench press 185 for 8", 'barbell-bench-press', 185, 8);
+  expect('hey can you put down squat 225 for 5', 'back-squat', 225, 5);
+  expect('please add bench press 185 for 8', 'barbell-bench-press', 185, 8);
+  expect("let's log the first exercise bench press 185 for 8", 'barbell-bench-press', 185, 8);
+  expect('log my first set of bench press 185 for 8', 'barbell-bench-press', 185, 8);
+  expect('okay so I just did squat 225 for 5', 'back-squat', 225, 5);
+  expect('go ahead and record deadlift 315 for 3', 'deadlift', 315, 3);
+  expect('can you log 185 for 8', 'barbell-bench-press', 185, 8, { currentExerciseId: 'barbell-bench-press' });
+
+  // Sets survive the scaffolding.
+  const r = parseUtterance('i want to log three sets of ten on lat pulldown at 120', { unitPref: 'lb' })[0];
+  assert.equal(r.set.sets, 3);
+  assert.equal(r.set.reps, 10);
+  assert.equal(r.set.weight, 120);
+});
+
+test('a polite phrase on its own is not mistaken for a set', () => {
+  for (const noise of ['can you', 'okay please', "let's go"]) {
+    assert.notEqual(parseUtterance(noise, { unitPref: 'lb' })[0].type, 'set', noise);
+  }
+});
