@@ -172,3 +172,30 @@ test('confidence drops when a field is missing', () => {
   const partial = one('bench press 185');
   assert.ok(full.confidence > partial.confidence);
 });
+
+test('word order does not matter — exercise, weight and reps in any position', () => {
+  const expect = (text, exerciseId, weight, reps) => {
+    const r = parseUtterance(text, { unitPref: 'lb' })[0];
+    assert.equal(r.type, 'set', `"${text}" did not parse as a set`);
+    assert.equal(r.set.exerciseId, exerciseId, `"${text}" → wrong exercise`);
+    assert.equal(r.set.weight, weight, `"${text}" → wrong weight`);
+    assert.equal(r.set.reps, reps, `"${text}" → wrong reps`);
+  };
+
+  // Exercise first, last, and in the middle; weight before and after reps.
+  expect('bench press 185 for 8', 'barbell-bench-press', 185, 8);
+  expect('185 for 8 bench press', 'barbell-bench-press', 185, 8);
+  expect('8 reps of bench press at 185', 'barbell-bench-press', 185, 8);
+  expect('bench press for 8 at 185', 'barbell-bench-press', 185, 8);
+  expect('at 185 bench press 8 reps', 'barbell-bench-press', 185, 8);
+  expect('8 reps bench press 185', 'barbell-bench-press', 185, 8);
+  expect('185 pounds bench press 8 reps', 'barbell-bench-press', 185, 8);
+  expect('bench press 8 reps 185 pounds', 'barbell-bench-press', 185, 8);
+  expect('for 8 reps at 185 on bench press', 'barbell-bench-press', 185, 8);
+  expect('squat 5 reps 225', 'back-squat', 225, 5);
+  expect('225 squat 5', 'back-squat', 225, 5);
+  expect('5 at 225 squat', 'back-squat', 225, 5);
+  expect('did 8 at 185 on the bench', 'barbell-bench-press', 185, 8);
+  expect('120 for 10 lat pulldown', 'lat-pulldown', 120, 10);
+  expect('lat pulldown 10 reps 120 pounds', 'lat-pulldown', 120, 10);
+});

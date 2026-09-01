@@ -12,7 +12,7 @@
  * Bump CACHE_VERSION whenever the file list changes.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME = `voicelift-${CACHE_VERSION}`;
 
 const PRECACHE = [
@@ -23,12 +23,10 @@ const PRECACHE = [
   './js/app.js',
   './js/parser.js',
   './js/exercises.js',
-  './js/analytics.js',
-  './js/coach.js',
   './js/store.js',
-  './js/charts.js',
   './js/speech.js',
   './js/wakelock.js',
+  './js/totals.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',

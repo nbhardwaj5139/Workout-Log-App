@@ -16,10 +16,37 @@ const SR = typeof window !== 'undefined'
 
 export const speechSupported = Boolean(SR);
 
+export const isIOS = () => typeof navigator !== 'undefined' && (
+  /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+);
+
+export const isStandalone = () => typeof window !== 'undefined' && (
+  window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true
+);
+
+/**
+ * On iOS every browser is WebKit underneath, but only Safari proper exposes
+ * speech recognition — and WebKit drops it again once the page is launched
+ * from the home screen. So the same device can have a working mic in a Safari
+ * tab and no mic at all in the installed app. Keyboard dictation is the
+ * answer there: it is on-device, it works everywhere, and it types into the
+ * same box that feeds the same parser.
+ */
 export function speechUnavailableReason() {
   if (SR) return null;
   if (typeof window === 'undefined') return 'No browser environment.';
   const ua = navigator.userAgent;
+
+  if (isIOS() && isStandalone()) {
+    return 'iOS switches off web speech recognition in home-screen apps — a WebKit bug, not this app. '
+      + 'Use the keyboard mic instead: tap the box below, then the 🎤 key on your keyboard. It is on-device and just as fast.';
+  }
+  if (isIOS()) {
+    return 'On iPhone only Safari exposes the speech API — Chrome and Firefox there are WebKit without it. '
+      + 'Either open this in Safari, or tap the box below and use the 🎤 key on your keyboard.';
+  }
   if (/Firefox/.test(ua)) return 'Firefox does not ship the Web Speech API. Use Chrome, Edge, or Safari for voice — typing still works here.';
   if (!window.isSecureContext) return 'Speech recognition needs HTTPS (or localhost). Serve this page over https and the mic will appear.';
   return 'This browser has no speech recognition. Typing still works.';
@@ -42,7 +69,10 @@ export class Recognizer {
   build() {
     const rec = new SR();
     rec.lang = this.lang;
-    rec.continuous = true;
+    // WebKit's `continuous` mode never fires a final result on iOS — the mic
+    // just stays open. One utterance at a time plus the restart in onend
+    // gives the same hands-free behaviour without the hang.
+    rec.continuous = !isIOS();
     rec.interimResults = true;
     rec.maxAlternatives = 3;
 
@@ -89,7 +119,7 @@ export class Recognizer {
       setTimeout(() => {
         if (!this.wanted) return;
         try { rec.start(); } catch { /* already starting */ }
-      }, 250);
+      }, isIOS() ? 400 : 250);
     };
 
     rec.onstart = () => this.onState('listening');

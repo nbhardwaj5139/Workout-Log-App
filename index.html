@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="description" content="Log your workout by talking. VoiceLift parses what you say, tracks every set, and coaches the next one.">
-  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f9f9f7">
-  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d0d0d">
-  <title>VoiceLift — talk your workout in</title>
+  <meta name="description" content="Say your set, it gets logged. A voice-first workout log.">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b">
+  <title>VoiceLift — say it, it's logged</title>
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
@@ -20,207 +20,123 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">🎙️</span> VoiceLift</div>
+    <div class="brand">VoiceLift</div>
     <div class="topbar-right">
-      <span id="session-meta" class="session-meta"></span>
-      <button id="theme-toggle" class="icon-btn" type="button" title="Switch light / dark" aria-label="Switch light or dark theme">◐</button>
+      <span id="session-meta" class="pill" hidden></span>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch light or dark theme">◐</button>
     </div>
   </header>
 
   <main>
-    <!-- ------------------------------------------------------------ -->
-    <section id="tab-workout" class="tab is-active" aria-label="Workout">
-      <div class="mic-area">
-        <button id="mic" class="mic" type="button" aria-pressed="false">
-          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5V6a3.5 3.5 0 1 0-7 0v5.5A3.5 3.5 0 0 0 12 15z"/>
-            <path d="M18.5 11.5a6.5 6.5 0 0 1-13 0M12 18v3M8.5 21h7" fill="none" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
-          <span class="mic-ring" aria-hidden="true"></span>
-        </button>
-        <p id="mic-status" class="mic-status">Tap the mic, then just talk.</p>
-        <p id="screen-lock" class="screen-lock" hidden>🔓 Screen held awake</p>
-        <p id="transcript" class="transcript" aria-live="polite"></p>
+    <!-- ============ TODAY ============ -->
+    <section id="tab-today" class="tab is-active" aria-label="Today">
+      <div id="today-head" class="day-head"></div>
+      <div id="today-sets" class="log"></div>
+      <div id="today-actions" class="day-actions" hidden>
+        <button id="undo-btn" class="btn" type="button">Undo last</button>
+        <button id="finish-btn" class="btn" type="button">Finish workout</button>
       </div>
-
-      <form id="manual-form" class="manual" autocomplete="off">
-        <input id="manual-input" type="text" inputmode="text"
-               placeholder="or type it: bench 185 for 8 at rpe 8" aria-label="Type a set">
-        <button type="submit" class="btn btn-primary">Log</button>
-      </form>
-
-      <div id="toast-area" class="toast-area" aria-live="polite"></div>
-
-      <div id="rest-timer" class="rest" hidden>
-        <div class="rest-count"><span id="rest-remaining">0:00</span></div>
-        <div class="rest-meta">
-          <span id="rest-label">Rest</span>
-          <button id="rest-skip" class="btn btn-ghost" type="button">Skip</button>
-        </div>
-        <div class="rest-track"><div id="rest-fill" class="rest-fill"></div></div>
-      </div>
-
-      <section id="coach-card" class="card coach" aria-label="Coach"></section>
-
-      <section class="card" aria-label="Today">
-        <div class="card-head">
-          <h2>Today</h2>
-          <div class="card-actions">
-            <button id="undo-btn" class="btn btn-ghost" type="button">Undo last</button>
-            <button id="finish-btn" class="btn btn-ghost" type="button">Finish workout</button>
-          </div>
-        </div>
-        <div id="today-summary" class="stat-row"></div>
-        <div id="today-sets" class="sets"></div>
-      </section>
-
-      <details class="card help">
-        <summary>What can I say?</summary>
-        <ul class="phrases">
-          <li><code>bench press 185 for 8</code></li>
-          <li><code>three sets of ten on lat pulldown at 120</code></li>
-          <li><code>squat two plates for five at RPE 8</code></li>
-          <li><code>incline dumbbell press 60s for 10 each hand</code></li>
-          <li><code>185 for 8</code> — carries the exercise you are already on</li>
-          <li><code>same again</code> · <code>one more</code></li>
-          <li><code>make that 195</code> — fixes what it just logged</li>
-          <li><code>undo</code> · <code>rest 90 seconds</code> · <code>what's next</code></li>
-          <li><code>run 5k in 28 minutes</code> · <code>plank 60 seconds</code></li>
-          <li><code>finish workout</code></li>
-        </ul>
-      </details>
-
-      <p class="disclaimer">
-        VoiceLift gives training suggestions based on your own logged numbers and
-        common strength-training rules of thumb. It is not medical advice and it
-        cannot see your form. If something hurts, stop and talk to a professional.
-      </p>
     </section>
 
-    <!-- ------------------------------------------------------------ -->
-    <section id="tab-trends" class="tab" aria-label="Trends">
+    <!-- ============ HISTORY ============ -->
+    <section id="tab-history" class="tab" aria-label="History">
       <div class="controls">
-        <label class="field">
-          <span>Exercise</span>
-          <select id="trend-exercise"></select>
-        </label>
-        <label class="field">
-          <span>Range</span>
-          <select id="trend-range">
-            <option value="30">Last 30 days</option>
-            <option value="90" selected>Last 90 days</option>
-            <option value="365">Last year</option>
-            <option value="0">All time</option>
-          </select>
-        </label>
+        <input id="sheet-filter" class="input" type="search" placeholder="Filter by exercise…" aria-label="Filter by exercise">
       </div>
-      <div id="headline-stats" class="stat-row stat-row-lg"></div>
-      <div id="chart-e1rm" class="chart-host"></div>
-      <div id="chart-ex-volume" class="chart-host"></div>
-      <div id="chart-weekly" class="chart-host"></div>
-      <div id="chart-calories" class="chart-host"></div>
-      <div id="chart-muscles" class="chart-host"></div>
-      <section id="pr-card" class="card" aria-label="Personal records"></section>
-      <p class="disclaimer">
-        Estimated 1RM comes from the Epley and Brzycki formulas and is only
-        dependable up to about 10 reps; calories are a MET model based on your
-        bodyweight and time under load, not a measurement.
-      </p>
+      <div id="history-host"></div>
+      <div class="btn-group export-row">
+        <button id="export-sets" class="btn" type="button">Sets CSV</button>
+        <button id="export-sessions" class="btn" type="button">Workouts CSV</button>
+        <button id="export-json" class="btn" type="button">JSON backup</button>
+      </div>
     </section>
 
-    <!-- ------------------------------------------------------------ -->
-    <section id="tab-sheet" class="tab" aria-label="Data sheet">
-      <div class="controls">
-        <label class="field grow">
-          <span>Filter</span>
-          <input id="sheet-filter" type="search" placeholder="exercise name…">
-        </label>
-        <div class="field">
-          <span>Export</span>
-          <div class="btn-group">
-            <button id="export-sets" class="btn" type="button">Sets CSV</button>
-            <button id="export-sessions" class="btn" type="button">Sessions CSV</button>
-            <button id="export-json" class="btn" type="button">JSON backup</button>
-          </div>
-        </div>
-      </div>
-      <div id="sheet-host" class="sheet-host"></div>
-    </section>
-
-    <!-- ------------------------------------------------------------ -->
+    <!-- ============ SETTINGS ============ -->
     <section id="tab-settings" class="tab" aria-label="Settings">
       <section class="card">
-        <h2>You</h2>
-        <label class="field">
-          <span>Units</span>
-          <select id="set-unit"><option value="lb">pounds (lb)</option><option value="kg">kilograms (kg)</option></select>
+        <h2>Logging</h2>
+        <label class="row">
+          <span class="row-label">Units</span>
+          <select id="set-unit" class="input compact">
+            <option value="lb">pounds</option>
+            <option value="kg">kilograms</option>
+          </select>
         </label>
-        <label class="field">
-          <span>Bodyweight <em id="bw-unit">(lb)</em> — used for calorie and bodyweight-lift maths</span>
-          <input id="set-bodyweight" type="number" min="30" max="600" step="1">
-        </label>
-        <label class="field checkbox">
-          <input id="set-speak" type="checkbox"> <span>Speak confirmations and warnings back to me</span>
-        </label>
-        <label class="field checkbox">
-          <input id="set-autorest" type="checkbox"> <span>Start a rest timer automatically after each set</span>
+        <label class="row">
+          <span class="row-label">Say confirmations out loud</span>
+          <input id="set-speak" class="switch" type="checkbox">
         </label>
       </section>
 
       <section class="card">
         <h2>Install</h2>
-        <p class="muted" id="install-state">Checking…</p>
+        <p id="install-state" class="muted"></p>
+        <p id="install-hint" class="muted small"></p>
         <div class="btn-group">
           <button id="install-btn" class="btn btn-primary" type="button" hidden>Add to home screen</button>
         </div>
-        <p class="muted small" id="install-hint"></p>
       </section>
 
       <section class="card">
         <h2>Your data</h2>
-        <p class="muted">
-          Everything is stored in this browser only — no account, no server, nothing
-          leaves the device. That also means clearing site data wipes it, so take a
-          JSON backup now and then.
+        <p class="muted small">
+          Stored in this browser only — no account, nothing uploaded. Clearing site
+          data wipes it, so take a JSON backup now and then.
         </p>
         <div class="btn-group">
-          <button id="load-sample" class="btn" type="button">Load sample history</button>
           <label class="btn" for="import-file">Import backup</label>
           <input id="import-file" type="file" accept="application/json" hidden>
           <button id="clear-data" class="btn btn-danger" type="button">Erase everything</button>
         </div>
       </section>
 
-      <section class="card">
-        <h2>Coaching rules in force</h2>
-        <div id="rules-list" class="rules"></div>
-      </section>
+      <p class="disclaimer">
+        VoiceLift records what you tell it. It does not coach you, and it is not
+        medical advice.
+      </p>
     </section>
   </main>
 
+  <!-- ============ COMPOSER (docked) ============ -->
+  <div class="composer">
+    <div id="toast-area" class="toast-area" aria-live="polite"></div>
+    <p id="transcript" class="transcript" aria-live="polite"></p>
+    <p id="mic-note" class="mic-note" hidden></p>
+    <form id="manual-form" class="composer-bar" autocomplete="off">
+      <input id="manual-input" class="composer-input" type="text" enterkeyhint="done"
+             placeholder="bench press 185 for 8" aria-label="Type a set">
+      <button id="mic" class="mic" type="button" aria-pressed="false" aria-label="Start listening">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="3" width="6" height="12" rx="3" fill="currentColor"/>
+          <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </form>
+  </div>
+
   <nav class="tabbar" aria-label="Sections">
-    <button class="tab-btn is-active" data-tab="workout" type="button"><span aria-hidden="true">🏋️</span>Workout</button>
-    <button class="tab-btn" data-tab="trends" type="button"><span aria-hidden="true">📈</span>Trends</button>
-    <button class="tab-btn" data-tab="sheet" type="button"><span aria-hidden="true">🗒️</span>Sheet</button>
-    <button class="tab-btn" data-tab="settings" type="button"><span aria-hidden="true">⚙️</span>Settings</button>
+    <button class="tab-btn is-active" data-tab="today" type="button">Today</button>
+    <button class="tab-btn" data-tab="history" type="button">History</button>
+    <button class="tab-btn" data-tab="settings" type="button">Settings</button>
   </nav>
 
-  <dialog id="edit-dialog" class="edit-dialog">
+  <dialog id="edit-dialog" class="sheet">
     <form method="dialog" id="edit-form">
       <h2 id="edit-title">Edit set</h2>
-      <div class="edit-grid">
-        <label class="field"><span>Weight</span><input name="weight" type="number" step="0.5" min="0"></label>
-        <label class="field"><span>Reps</span><input name="reps" type="number" step="1" min="0"></label>
-        <label class="field"><span>Sets</span><input name="sets" type="number" step="1" min="1"></label>
-        <label class="field"><span>RPE</span><input name="rpe" type="number" step="0.5" min="1" max="10"></label>
-        <label class="field"><span>Seconds</span><input name="durationSec" type="number" step="1" min="0"></label>
-        <label class="field"><span>Distance (m)</span><input name="distanceM" type="number" step="1" min="0"></label>
-      </div>
       <p id="edit-raw" class="muted small"></p>
-      <div class="dialog-actions">
+      <div class="edit-grid">
+        <label class="field"><span>Weight</span><input name="weight" class="input" type="number" step="0.5" min="0" inputmode="decimal"></label>
+        <label class="field"><span>Reps</span><input name="reps" class="input" type="number" step="1" min="0" inputmode="numeric"></label>
+        <label class="field"><span>Sets</span><input name="sets" class="input" type="number" step="1" min="1" inputmode="numeric"></label>
+        <label class="field"><span>RPE</span><input name="rpe" class="input" type="number" step="0.5" min="1" max="10" inputmode="decimal"></label>
+        <label class="field"><span>Seconds</span><input name="durationSec" class="input" type="number" step="1" min="0" inputmode="numeric"></label>
+        <label class="field"><span>Distance (m)</span><input name="distanceM" class="input" type="number" step="1" min="0" inputmode="numeric"></label>
+      </div>
+      <div class="sheet-actions">
         <button value="delete" class="btn btn-danger" type="submit">Delete</button>
         <span class="spacer"></span>
-        <button value="cancel" class="btn btn-ghost" type="submit">Cancel</button>
+        <button value="cancel" class="btn" type="submit">Cancel</button>
         <button value="save" class="btn btn-primary" type="submit">Save</button>
       </div>
     </form>
