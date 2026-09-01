@@ -1,0 +1,98 @@
+# Publishes the app to GitHub Pages.
+#
+# SETUP, one time, by a human with admin on the repo:
+#   Settings → Pages → Build and deployment → Source: "GitHub Actions"
+#
+# The workflow cannot do this itself. `configure-pages` has an `enablement`
+# option that creates the Pages site over the API, but site creation needs
+# repo-admin rights that GITHUB_TOKEN does not have — it fails with
+# "Resource not accessible by integration".
+#
+# NOTE: GitHub Pages on a PRIVATE repository needs a paid plan. On a free
+# account, either make this repo public or host it on Cloudflare Pages /
+# Netlify, both of which serve private repos for free.
+#
+# Until Pages is enabled the deploy job is SKIPPED, not failed, so this
+# workflow never mails you a red build for a setting nobody has turned on.
+# The moment Pages is enabled, the next push deploys with nothing else to do.
+#
+# There is no build step; the app is static files served from the repo root.
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: Run the test suite
+        run: node --test test/*.test.mjs
+
+  # Is Pages actually turned on? If not, skip the deploy quietly rather than
+  # failing the run and mailing the repo owner about it.
+  check-pages:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.probe.outputs.enabled }}
+    steps:
+      - name: Probe the Pages API
+        id: probe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pages")
+
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Pages is enabled — deploying." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Deploy skipped — GitHub Pages is not enabled"
+              echo
+              echo "The Pages API returned \`$code\`, so there is no site to publish to."
+              echo "The tests passed; nothing is wrong with the code."
+              echo
+              echo "Turn it on: **Settings → Pages → Build and deployment → Source: \"GitHub Actions\"**"
+              echo
+              echo "On a free account this also requires the repository to be public."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  deploy:
+    needs: [test, check-pages]
+    if: needs.check-pages.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - name: Upload the app
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5
