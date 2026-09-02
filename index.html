@@ -129,6 +129,27 @@
   <!-- ============ COMPOSER (docked) ============ -->
   <div class="composer">
     <div id="toast-area" class="toast-area" aria-live="polite"></div>
+    <div id="quick" class="quick" hidden>
+      <div class="quick-head">
+        <span id="quick-name" class="quick-name"></span>
+        <button id="quick-close" class="quick-close" type="button" aria-label="Hide quick log">✕</button>
+      </div>
+      <p id="quick-last" class="quick-last"></p>
+      <div class="quick-steppers">
+        <div class="stepper">
+          <button class="step" data-step="weight-down" type="button" aria-label="Less weight">−</button>
+          <span class="step-value"><b id="quick-weight">—</b><em id="quick-unit"></em></span>
+          <button class="step" data-step="weight-up" type="button" aria-label="More weight">+</button>
+        </div>
+        <div class="stepper">
+          <button class="step" data-step="reps-down" type="button" aria-label="Fewer reps">−</button>
+          <span class="step-value"><b id="quick-reps">—</b><em>reps</em></span>
+          <button class="step" data-step="reps-up" type="button" aria-label="More reps">+</button>
+        </div>
+      </div>
+      <button id="quick-log" class="quick-log" type="button">Log set</button>
+    </div>
+    <div id="chips" class="chips" hidden></div>
     <p id="status" class="status" aria-live="polite"></p>
     <p id="transcript" class="transcript" aria-live="polite"></p>
     <p id="mic-note" class="mic-note" hidden></p>

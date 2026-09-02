@@ -16,6 +16,8 @@ import { ScreenLock } from './wakelock.js';
 import { routeUtterance, detectWake, WAKE_PHRASES, ARM_WINDOW_MS } from './handsfree.js';
 import { bestReading } from './repair.js';
 import * as voicelog from './voicelog.js';
+import { lastTimeLine, recentExercises, stageNext, formatSets } from './history.js';
+import { getExercise as lookupExercise } from './exercises.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -27,6 +29,7 @@ let lastSetRef = null;
 let installPrompt = null;
 let resumeMicOnReturn = false;
 let handsFree = false;
+let staged = null;      // the set the quick-log card will write
 const armed = { armedUntil: 0 };
 let armTimer = null;
 
@@ -266,6 +269,7 @@ function logSet(result, source) {
   });
 
   cue.logged();
+  if (onboardingWaiting) { onboardingWaiting(); onboardingWaiting = null; }
   speak(`${saved.exerciseName}, ${plainSet(saved).replace('×', 'by')}`, state.settings.speak);
   queueMicrotask(() => {
     const row = document.querySelector(`.set-row[data-set="${saved.id}"]`);
@@ -364,6 +368,7 @@ function runCommand(result) {
       toast(`<div class="toast-main">Workout saved</div>
         <p class="small muted">${t.hardSets} sets · ${t.reps} reps · ${fmtVolume(t.volume)} ${unit()} moved. It’s in History.</p>`);
       speak(`Saved. ${t.hardSets} sets.`, state.settings.speak);
+      setTimeout(maybeNudgeBackup, 1200);
       if (result.command === 'new') openSession();
       return null;
     }
@@ -383,6 +388,104 @@ function runCommand(result) {
 }
 
 // ---------------------------------------------------------------------------
+// Quick log — the fastest path to a set, and the one that works when the
+// microphone does not. Most sets repeat the last one or sit one step off it,
+// so that is exactly one tap and two taps respectively.
+// ---------------------------------------------------------------------------
+
+/** Smallest sensible change for this equipment, in the tracked unit. */
+function weightStep(exerciseId) {
+  const ex = lookupExercise(exerciseId);
+  if (unit() === 'kg') return ex && ex.increment >= 10 ? 5 : 2.5;
+  return ex ? ex.increment : 5;
+}
+
+function stageFor(exerciseKey) {
+  if (!exerciseKey) { staged = null; return; }
+  const next = stageNext(state.sessions, session, exerciseKey);
+  staged = next || {
+    exerciseId: lookupExercise(exerciseKey) ? exerciseKey : null,
+    exerciseName: (lookupExercise(exerciseKey) || {}).name || exerciseKey,
+    kind: 'weight_reps',
+    weight: undefined,
+    reps: undefined,
+  };
+  renderQuick();
+}
+
+function adjust(field, direction) {
+  if (!staged) return;
+  if (field === 'weight') {
+    const step = weightStep(staged.exerciseId);
+    const base = staged.weight ?? 0;
+    staged.weight = Math.max(0, Math.round((base + direction * step) * 10) / 10);
+  } else {
+    staged.reps = Math.max(1, (staged.reps ?? 1) + direction);
+  }
+  renderQuick();
+}
+
+function logStaged() {
+  if (!staged) return;
+  const set = {
+    exerciseId: staged.exerciseId,
+    exerciseName: staged.exerciseName,
+    custom: !staged.exerciseId,
+    kind: staged.kind || 'weight_reps',
+    sets: 1,
+    reps: staged.reps,
+    weight: staged.weight,
+    unit: staged.weight !== undefined ? unit() : undefined,
+    perSide: staged.perSide,
+    bodyweight: staged.bodyweight,
+    durationSec: staged.durationSec,
+    raw: '',
+  };
+  logSet({ type: 'set', set, confidence: 1, warnings: [] }, 'tap');
+  render();
+}
+
+function renderQuick() {
+  const host = $('#quick');
+  if (!staged || (staged.reps === undefined && staged.weight === undefined && !staged.durationSec)) {
+    host.hidden = true;
+    return;
+  }
+  host.hidden = false;
+  $('#quick-name').textContent = staged.exerciseName;
+
+  const key = staged.exerciseId || staged.exerciseName;
+  const last = lastTimeLine(state.sessions, key, session && session.id);
+  $('#quick-last').textContent = last ? `last time · ${last.text.split(' · ').slice(1).join(' · ')}` : '';
+
+  $('#quick-weight').textContent = staged.weight !== undefined ? fmtNum(staged.weight) : (staged.bodyweight ? 'BW' : '—');
+  $('#quick-unit').textContent = staged.weight !== undefined ? `${unit()}${staged.perSide ? '/hand' : ''}` : '';
+  $('#quick-reps').textContent = staged.reps ?? '—';
+
+  const label = [
+    staged.weight !== undefined ? `${fmtNum(staged.weight)} ${unit()}` : (staged.bodyweight ? 'bodyweight' : ''),
+    staged.reps !== undefined ? `× ${staged.reps}` : '',
+  ].filter(Boolean).join(' ');
+  $('#quick-log').textContent = label ? `Log ${label}` : 'Log set';
+}
+
+function renderChips() {
+  const host = $('#chips');
+  const recent = recentExercises(state.sessions, 8)
+    .filter((r) => r.key !== (staged && (staged.exerciseId || staged.exerciseName)));
+  if (!recent.length) { host.hidden = true; return; }
+  host.hidden = false;
+  host.innerHTML = recent
+    .map((r) => `<button class="chip-btn" type="button" data-key="${escapeHTML(r.key)}">${escapeHTML(r.name)}</button>`)
+    .join('');
+  $$('#chips .chip-btn').forEach((btn) => btn.addEventListener('click', () => {
+    currentExerciseId = lookupExercise(btn.dataset.key) ? btn.dataset.key : currentExerciseId;
+    stageFor(btn.dataset.key);
+    renderChips();
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
 
@@ -391,6 +494,9 @@ function render() {
   renderToday();
   renderHistory();
   renderSettings();
+  if (currentExerciseId) stageFor(currentExerciseId);
+  else { renderQuick(); }
+  renderChips();
 }
 
 function renderSessionMeta() {
@@ -453,6 +559,10 @@ function renderToday() {
         <span class="group-name">${escapeHTML(g.name)}</span>
         <span class="group-meta">${hard} set${hard > 1 ? 's' : ''}${vol ? ` · ${fmtVolume(vol)} ${unit()}` : ''}</span>
       </div>
+      ${(() => {
+        const prev = lastTimeLine(state.sessions, g.key, session.id);
+        return prev ? `<p class="group-last">${escapeHTML(prev.text)}</p>` : '';
+      })()}
       <ul class="set-list">
         ${g.sets.map((s, i) => `<li><button class="set-row${knownSetIds.has(s.id) ? '' : ' is-new'}" type="button" data-set="${s.id}">
           <span class="set-index">${i + 1}</span>
@@ -636,6 +746,93 @@ function registerServiceWorker() {
 }
 
 // ---------------------------------------------------------------------------
+// First run
+//
+// A cold browser microphone prompt with no explanation gets denied, and a
+// denied microphone is an app nobody comes back to. So: say what it is, ask
+// for the mic with a reason, then guide one real set before getting out of
+// the way.
+// ---------------------------------------------------------------------------
+
+const ONBOARDED = 'voicelift.onboarded';
+
+function showOnboarding() {
+  if (localStorage.getItem(ONBOARDED)) return;
+  if (state.sessions.some((s) => s.sets.length)) return; // already a user
+
+  const el = document.createElement('div');
+  el.className = 'onboard';
+  el.innerHTML = `
+    <div class="onboard-card" role="dialog" aria-modal="true" aria-label="Welcome">
+      <div class="onboard-mark" aria-hidden="true">🎙️</div>
+      <div class="onboard-title">Say it, it's logged</div>
+      <p class="onboard-body">
+        Name the exercise once, then just call out the numbers between sets.
+        No typing, no scrolling.
+      </p>
+      <div class="onboard-say">“bench press 185 for 8”</div>
+      <div class="onboard-actions">
+        <button class="btn btn-primary" data-act="mic">Turn on the mic and try it</button>
+        <button class="btn" data-act="skip">I'll tap and type instead</button>
+      </div>
+    </div>`;
+
+  const finish = () => {
+    localStorage.setItem(ONBOARDED, '1');
+    el.remove();
+  };
+
+  el.querySelector('[data-act="mic"]').addEventListener('click', () => {
+    if (!speechSupported) {
+      finish();
+      toast(`<div class="toast-main">No microphone here</div><p class="small muted">${escapeHTML(speechUnavailableReason())}</p>`, { level: 'low' });
+      return;
+    }
+    speak('', state.settings.speak);
+    recognizer.start();               // this is what raises the permission prompt
+    el.querySelector('.onboard-title').textContent = 'Go on then';
+    el.querySelector('.onboard-body').textContent = 'Say the line below. It closes as soon as your first set lands.';
+    el.querySelector('.onboard-actions').innerHTML = '';
+    const skip = document.createElement('button');
+    skip.className = 'btn';
+    skip.textContent = 'Skip';
+    skip.addEventListener('click', finish);
+    el.querySelector('.onboard-actions').appendChild(skip);
+    onboardingWaiting = finish;
+  });
+
+  el.querySelector('[data-act="skip"]').addEventListener('click', finish);
+  document.body.appendChild(el);
+}
+
+let onboardingWaiting = null;
+
+// ---------------------------------------------------------------------------
+// Keeping the log safe
+// ---------------------------------------------------------------------------
+
+const LAST_BACKUP = 'voicelift.lastBackup';
+
+/**
+ * localStorage is one cleared cache away from gone, and losing a year of
+ * training is the kind of failure nobody forgives. Nag gently, not often.
+ */
+function maybeNudgeBackup() {
+  const finished = state.sessions.filter((s) => s.endedAt && s.sets.length).length;
+  const since = Number(localStorage.getItem(LAST_BACKUP) || 0);
+  if (finished < 5 || finished - since < 5) return;
+  localStorage.setItem(LAST_BACKUP, String(finished));
+  toast(`<div class="toast-main">Back up your log?</div>
+    <p class="small muted">${finished} workouts live in this browser only. Clearing site data erases them.</p>`, {
+    ttl: 0,
+    actions: [{
+      label: 'Download backup',
+      run: () => download(`voicelift-backup-${stamp()}.json`, store.toJSON(state), 'application/json'),
+    }, { label: 'Not now', run: () => {} }],
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Speech
 // ---------------------------------------------------------------------------
 
@@ -781,6 +978,13 @@ function wire() {
     input.value = '';
   });
 
+  $$('#quick .step').forEach((btn) => btn.addEventListener('click', () => {
+    const [field, dir] = btn.dataset.step.split('-');
+    adjust(field, dir === 'up' ? 1 : -1);
+  }));
+  $('#quick-log').addEventListener('click', logStaged);
+  $('#quick-close').addEventListener('click', () => { staged = null; renderQuick(); renderChips(); });
+
   $('#undo-btn').addEventListener('click', undoLast);
   $('#finish-btn').addEventListener('click', () => { runCommand({ command: 'finish' }); render(); });
 
@@ -910,6 +1114,7 @@ function boot() {
   wire();
   render();
   registerServiceWorker();
+  showOnboarding();
 }
 
 boot();

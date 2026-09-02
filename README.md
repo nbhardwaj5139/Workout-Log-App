@@ -107,6 +107,31 @@ And be aware that starting the mic will duck or interrupt whatever you're
 playing, because the OS gives the audio input session priority. Prop the phone
 on the bench, keep the app open.
 
+## Tapping is first-class
+
+Voice fails sometimes — loud gyms, accents, iOS. When it does, you should still
+be faster than a notebook, so the tap path is built to stand on its own.
+
+After any set, a card appears above the keyboard with the exercise, what you did
+**last time**, and the set staged ready to go:
+
+```
+Barbell Bench Press
+last time · 185×8, 185×8, 185×7
+   [−]  185 lb  [+]      [−]  8 reps  [+]
+   [        Log 185 lb × 8        ]
+```
+
+- **One tap** repeats the set — which is most sets.
+- **Two taps** log a variation: nudge weight by the real increment for that
+  equipment (5 lb barbell, 10 lb machine, 2.5 kg) or reps by one.
+- The button always says exactly what it will write, so nothing is a surprise.
+- **Recent exercises** sit as chips above it; tapping one stages it from your
+  last session with that movement.
+
+Every exercise heading also carries its own **last time** line. No tap, no
+question asked — it is the reason people open a training log at all.
+
 ## The log
 
 - **Today** — what you've done this session, grouped by exercise. Tap any set
