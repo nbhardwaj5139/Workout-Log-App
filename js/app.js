@@ -568,6 +568,7 @@ function renderToday() {
           <span class="set-index">${i + 1}</span>
           <span class="set-main">${describeSet(s)}</span>
           <span class="spacer"></span>
+          ${s.warmup ? '<span class="set-tag">warm-up</span>' : ''}
           ${(s.sets || 1) > 1 ? `<span class="set-tag">×${s.sets} sets</span>` : ''}
           ${s.rpe !== undefined ? `<span class="set-tag">RPE ${s.rpe}</span>` : ''}
           ${s.confidence !== undefined && s.confidence < 0.7 ? '<span class="set-tag warn">check</span>' : ''}

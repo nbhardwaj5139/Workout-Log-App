@@ -134,9 +134,23 @@ export function wordsToNumbers(text) {
 // Text hygiene
 // ---------------------------------------------------------------------------
 
+/** "benched" is the bench press; "squatted" is a squat. */
+const VERB_FORMS = new Map(Object.entries({
+  benched: 'bench', squatted: 'squat', deadlifted: 'deadlift',
+  curled: 'curl', rowed: 'row', pressed: 'press', pulled: 'pull',
+  dipped: 'dip', lunged: 'lunge', planked: 'plank', shrugged: 'shrug',
+  ran: 'run', jogged: 'jog', biked: 'bike', swam: 'swim', walked: 'walk',
+  benching: 'bench', squatting: 'squat', deadlifting: 'deadlift',
+  curling: 'curl', rowing: 'row', pressing: 'press', running: 'run',
+}));
+
 const FILLERS = [
   'u+m+', 'u+h+', 'e+r+', 'h+m+', 'mm+', 'okay', 'ok', 'alright', 'all right',
   'so', 'like', 'just', 'please', 'yeah', 'yep', 'and then i', 'i think',
+  // Commentary people tack on the end: "185 for 8 nice", "225 for 5, brutal".
+  'nice', 'easy', 'heavy', 'hard', 'good', 'great', 'tough', 'solid', 'clean',
+  'smooth', 'brutal', 'rough', 'light', 'felt', 'feels', 'feeling', 'boom',
+  'there', 'done', 'ez',
 ];
 /**
  * Conversational scaffolding people put in front of the actual set.
@@ -168,6 +182,8 @@ const LEAD_INS = [
   'the first set', 'first set', 'my next set of', 'next set of', 'my set of',
   'my last set', 'this set', 'that set', 'the set', 'my set',
   'lets do', "let's do", 'next up', 'next', 'this is', 'it was', 'as',
+  'moving on to', 'moving to', 'switching to', 'switch to', 'now doing',
+  'starting', 'time for', 'on to', 'onto',
   // stray connectors left behind by the above
   'the', 'a', 'an', 'my', 'of', 'is', 'was', 'that', 'to', 'and', 'then', 'for the',
 ];
@@ -184,9 +200,12 @@ export function normalizeText(input) {
     .replace(/\b(?:a |one )?triple\b/g, '3 reps');
   for (const f of FILLERS) t = t.replace(new RegExp(`\\b${f}\\b`, 'g'), ' ');
   t = t.replace(/\s+/g, ' ').trim();
+  // Verb forms back to the noun the exercise list knows.
+  t = t.split(' ').map((w) => VERB_FORMS.get(w) || w).join(' ');
   // "hey can you log my first set of bench press" stacks five of these, so
   // keep peeling until nothing matches. A strip that would leave nothing
   // useful behind is rolled back — better a clumsy parse than an empty one.
+  const OPERATIONS = new Set(['add', 'add in', 'up', 'drop', 'down', 'plus', 'minus']);
   const ordered = [...LEAD_INS].sort((a, b) => b.length - a.length);
   for (let pass = 0; pass < 8; pass += 1) {
     let peeled = false;
@@ -194,6 +213,8 @@ export function normalizeText(input) {
       const re = new RegExp(`^${l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
       if (!re.test(t)) continue;
       const next = t.replace(re, '').trim();
+      // "add ten" is an instruction, not a preamble.
+      if (OPERATIONS.has(l) && /^(?:\d|one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty)\b/.test(next)) continue;
       if (!next) return t;           // that phrase *was* the whole utterance
       t = next;
       peeled = true;
@@ -329,6 +350,17 @@ function extractFields(text, exercise, opts) {
   const state = {
     text: text.replace(/\b(\d+)s\b/g, kind === 'duration' ? '$1 seconds' : '$1'),
   };
+
+  // A warm-up is still a set, but it must not be mistaken for working volume.
+  if (take(state, /\b(?:warm ?ups?|warm ?up sets?)\b/)) f.warmup = true;
+
+  // "failed at 6", "only got 6" — the number is reps, not load.
+  const shortfall = take(state, new RegExp(`\\b(?:failed at|failed on|only got|only did|only managed|managed only)\\s*${NUM}\\b`));
+  if (shortfall) {
+    f.reps = Number(shortfall[1]);
+    f.rir = 0;
+    f.toFailure = true;
+  }
 
   // Bodyweight-only.
   if (take(state, /\b(?:body ?weight|just my body ?weight|no (?:added )?weight|unweighted|bw)\b/)) {
@@ -546,7 +578,22 @@ function parseClause(clause, ctx) {
   }
 
   const shape = exercise || (custom ? { kind: 'weight_reps', perSide: false } : null);
-  const fields = extractFields(withoutName, shape, opts);
+
+  // "add ten", "up five", "drop twenty" are relative to the set before them.
+  // Resolve to an absolute load here, where the previous set is in scope, and
+  // hand the rest of the pipeline an ordinary "at <weight>".
+  let body2 = withoutName;
+  const prevWeight = ctx.lastSet && ctx.lastSet.weight;
+  const relative = /\b(?:add|up|plus|increase(?: by)?|drop|down|minus|reduce(?: by)?|take off)\s+(\d+(?:\.\d+)?)\b/.exec(body2);
+  const relativeCap = opts.unitPref === 'kg' ? 50 : 100;
+  if (relative && prevWeight !== undefined && Number(relative[1]) <= relativeCap) {
+    const down = /^(?:drop|down|minus|reduce|take off)/.test(relative[0]);
+    const value = Math.max(0, prevWeight + (down ? -1 : 1) * Number(relative[1]));
+    body2 = `${body2.slice(0, relative.index)} at ${value} ${body2.slice(relative.index + relative[0].length)}`
+      .replace(/\s+/g, ' ').trim();
+  }
+
+  const fields = extractFields(body2, shape, opts);
 
   const hasData = fields.reps !== undefined || fields.weight !== undefined
     || fields.durationSec !== undefined || fields.distanceM !== undefined;
@@ -613,6 +660,8 @@ function parseClause(clause, ctx) {
       bodyweight: Boolean(fields.bodyweight) || (kind === 'bodyweight_reps' && fields.weight === undefined),
       rpe: fields.rpe,
       rir: fields.rir,
+      warmup: fields.warmup || undefined,
+      toFailure: fields.toFailure || undefined,
       durationSec: fields.durationSec,
       distanceM: fields.distanceM,
       raw: clause,
@@ -642,6 +691,12 @@ export function parseUtterance(input, ctx = {}) {
   const running = { ...ctx };
   for (const clause of clauses) {
     const r = parseClause(clause, running);
+    // A note is prose, not a command to be tidied — take it from what was
+    // actually said, before filler-stripping touched it.
+    if (r.type === 'command' && r.command === 'note') {
+      const verbatim = /\b(?:note|add a note|remember)\b\s*(.+)$/i.exec(String(input || ''));
+      if (verbatim) r.text = verbatim[1].trim().replace(/[.\s]+$/, '');
+    }
     if (r.type === 'set') {
       running.currentExerciseId = r.set.exerciseId || running.currentExerciseId;
       running.lastSet = r.set;

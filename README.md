@@ -40,15 +40,26 @@ bench press for 8 at 185   at 185 bench press 8 reps  185 pounds bench press 8 r
 | `make that 195` | corrects what it just logged |
 | `undo` · `finish workout` | commands |
 
-It also copes with how people actually talk. All of these log the same set:
+It also copes with how people actually talk. `test/english.test.mjs` is the
+spec — 43 phrasings a person would plausibly say mid-workout, all of which must
+keep parsing:
 
-```
-bench press 185 for 8
-i'd like you to log bench press 185 for 8
-hey can you put down bench press, 185 for 8
-okay so I just did bench press 185 for 8
-log my first set of bench press 185 for 8
-```
+| You say | It understands |
+|---|---|
+| `i'd like you to log bench press 185 for 8` | conversational scaffolding |
+| `hey can you put down bench press, 185 for 8` | " |
+| `benched 185 for 8` · `squatted 225 for 5` | the lift named as a verb |
+| `I benched 185 eight times` · `185 times 8` | "times" as the multiplier |
+| `hit 185 for 8` · `knocked out 8 at 185` | action verbs |
+| `a set of 8 at 185` · `second set 185 for 8` | sets without a leading digit |
+| `185 for 8 nice` · `squat 225 for 5 that was heavy` | trailing commentary ignored |
+| `only got 6` · `failed at 6` | reps, flagged to failure |
+| `warm up set 135 for 5` | tagged a warm-up, kept out of working volume |
+| `add ten for 8` · `up five` · `drop twenty` | relative to your last set |
+| `moving to squats` · `switch to squats` · `starting deadlifts` | changing exercise |
+
+If a phrasing fails in real use, it goes in that file first and the fix comes
+second.
 
 **If it mishears you, send me the words.** Settings → **Voice log** keeps the
 last 200 utterances: the raw transcript, every alternative the recogniser

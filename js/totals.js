@@ -14,6 +14,9 @@ export function effectiveLoad(set) {
 
 /** Weight x reps for one logged entry (which may stand for several sets). */
 export function setVolume(set) {
+  // A warm-up is recorded, but it is not working volume — counting it makes
+  // every total lie by however much you warmed up that day.
+  if (set.warmup) return 0;
   if (!set.reps || !set.weight) return 0;
   return effectiveLoad(set) * set.reps * (set.sets || 1);
 }

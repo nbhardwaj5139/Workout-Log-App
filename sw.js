@@ -12,7 +12,7 @@
  * Bump CACHE_VERSION whenever the file list changes.
  */
 
-const CACHE_VERSION = 'v7';
+const CACHE_VERSION = 'v8';
 const CACHE_NAME = `voicelift-${CACHE_VERSION}`;
 
 const PRECACHE = [

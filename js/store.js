@@ -103,7 +103,7 @@ export const updateSettings = (state, patch) => ({
 
 const CSV_COLUMNS = [
   'date', 'time', 'session_id', 'exercise', 'exercise_id', 'sets', 'reps',
-  'weight', 'unit', 'per_side', 'bodyweight_only', 'rpe',
+  'weight', 'unit', 'per_side', 'bodyweight_only', 'warmup', 'rpe',
   'duration_sec', 'distance_m', 'volume', 'source', 'transcript',
 ];
 
@@ -131,6 +131,7 @@ export function toCSV(state) {
         set.weight !== undefined ? (set.unit || state.settings.unit) : '',
         set.perSide ? 'yes' : '',
         set.bodyweight ? 'yes' : '',
+        set.warmup ? 'yes' : '',
         set.rpe ?? '',
         set.durationSec ?? '',
         set.distanceM ? Math.round(set.distanceM) : '',
